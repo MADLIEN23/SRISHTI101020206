@@ -1,3 +1,9 @@
+## 🔗 Live Demo: https://REPLACE-WITH-YOUR-LINK.vercel.app
+
+> No install needed. If the link fails: open `dist/index.html` with Go Live in VS Code, or open `standalone.html` in Chrome (needs internet).
+
+---
+
 # 📊 AdQueryTriage - Google Ads Search Query Triage Dashboard
 
 > **A single-page React dashboard powered by PapaParse to ingest Google Ads Search Terms CSVs and algorithmically triage queries into `Promote` (Exact Match Keywords), `Block` (Negative Keywords), and `Ignore` (Monitor).**
