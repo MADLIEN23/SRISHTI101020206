@@ -6,22 +6,43 @@
 
 ## 🚀 Quick Start
 
-### Option 1: Standalone Browser Launch (No Build Required)
-Simply double-click or open either of these in any modern web browser:
-- `google-ads-triage.html` (in root directory)
-- `google-ads-triage-dashboard/standalone.html`
+### Run the website (recommended)
 
-### Option 2: Run Modern Vite React Dev Server
+1. Install **Node.js (LTS version)** from https://nodejs.org, then restart VS Code.
+2. Download and unzip the project, then open the folder in VS Code (**File → Open Folder**).
+   Make sure you open the folder that contains `package.json`.
+3. Open the terminal (**Ctrl + `**) and run these two commands one at a time:
+
 ```bash
-cd google-ads-triage-dashboard
 npm install
 npm run dev
 ```
 
-### Option 3: Run Vitest Unit Tests
+4. Open **http://localhost:5173/** in your browser.
+
+> ⚠️ **Do NOT use the "Go Live" / Live Server button.** It shows a blank page for this project. Always use `npm run dev`.
+>
+> On Windows, if you see *"running scripts is disabled on this system"*, run this once in the terminal and then try again:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> ```
+
+### Quick preview without installing anything
+
+Open `standalone.html` in Chrome (needs an internet connection).
+
+### Run unit tests
+
 ```bash
-cd google-ads-triage-dashboard
 npm test
+```
+
+### Python scripts (optional)
+
+```bash
+pip install -r requirements.txt
+python test_pipeline.py
+python -m unittest test_triage_engine
 ```
 
 ---
