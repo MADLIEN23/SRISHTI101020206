@@ -1,127 +1,73 @@
-# Search Term Triage Engine — Data Pipeline Module (Person 3)
+# 📊 AdQueryTriage - Google Ads Search Query Triage Dashboard
 
-Part of the **PS-01 Search Term Triage Engine** project for *Kestrel Business Funding*.
-
-## Overview
-This repository contains the **Data Processing & Pipeline Module** (owned by **Person 3**). It is responsible for ingesting, validating, sanitizing, and exporting search term reports (handling up to 25,000+ rows efficiently), while providing a plug-and-play hook for the Triage Engine (Person 2) and Frontend (Person 1).
+> **A single-page React dashboard powered by PapaParse to ingest Google Ads Search Terms CSVs and algorithmically triage queries into `Promote` (Exact Match Keywords), `Block` (Negative Keywords), and `Ignore` (Monitor).**
 
 ---
 
-## Deliverables Covered
-- [x] **File Upload & Ingestion**: Reads `.csv` and Excel (`.xlsx`, `.xls`) files.
-- [x] **Schema Validation**: Validates all 10 required columns and raises clear, actionable error messages if any are missing.
-- [x] **Data Sanitization**: Safely handles blank values, strips whitespace, and converts invalid/corrupt numeric entries to zero without crashing.
-- [x] **Triage Engine Integration**: Provides a pluggable callback hook (`triage_fn`) to connect directly to Person 2's classification engine.
-- [x] **Fallback Handling**: Includes a fallback review mode if the triage engine has not yet been connected.
-- [x] **Results Export**: Exports triaged datasets to a downloadable, properly formatted CSV.
-- [x] **Sample Dataset**: Includes a verified sample dataset in `sample_data/` for rapid testing.
-- [x] **Automated Tests**: Unit and integration test suite in `test_pipeline.py`.
+## 🚀 Quick Start
 
----
+### Option 1: Standalone Browser Launch (No Build Required)
+Simply double-click or open either of these in any modern web browser:
+- `google-ads-triage.html` (in root directory)
+- `google-ads-triage-dashboard/standalone.html`
 
-## Repository Structure
-
-```text
-search-term-triage/
-├── data_pipeline.py               # Core pipeline module (load, validate, sanitize, export)
-├── test_pipeline.py               # Automated test suite
-├── requirements.txt               # Dependencies (pandas, openpyxl)
-├── sample_data/
-│   └── sample_search_terms.csv    # Sample 15-row dataset for quick verification
-├── .gitignore                     # Git ignore rules for caches and outputs
-└── README.md                      # Documentation and integration guide
-```
-
----
-
-## Required Schema
-
-The pipeline expects search term reports with the following columns:
-| Column | Type | Description |
-|---|---|---|
-| `row_id` | Integer / String | Unique identifier for the row |
-| `search_term` | String | User search query typed into Google |
-| `match_type` | String | `broad`, `phrase`, or `exact` |
-| `campaign` | String | Campaign name |
-| `ad_group` | String | Ad group name |
-| `impressions` | Numeric | Total impressions |
-| `clicks` | Numeric | Total clicks |
-| `cost` | Numeric | Advertising cost (USD) |
-| `conversions` | Numeric | Completed loan applications |
-| `conversion_value` | Numeric | Estimated monetary value of conversions |
-
----
-
-## Installation & Setup
-
-1. Clone this repository or copy the folder into your project:
-   ```bash
-   git clone <repo-url>
-   cd search-term-triage
-   ```
-
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
----
-
-## How to Run
-
-### 1. Run via Command Line (CLI)
-You can run the pipeline directly from your terminal:
+### Option 2: Run Modern Vite React Dev Server
 ```bash
-python data_pipeline.py sample_data/sample_search_terms.csv
-```
-This will sanitize the data, run the fallback triage, and output `sample_search_terms_triaged_output.csv`.
-
-### 2. Team Integration Guide
-
-#### How Person 2 (Triage Engine) plugs in:
-Person 2 can pass their classification function directly into `process_file`:
-
-```python
-from data_pipeline import process_file
-
-def my_triage_engine(df):
-    """
-    Person 2's classification logic.
-    Must populate: 'decision', 'confidence', 'reason'
-    """
-    df = df.copy()
-    # Your rule-based or ML classification logic here
-    df["decision"] = "promote"  # or 'block', 'ignore'
-    df["confidence"] = "high"   # or 'medium', 'low'
-    df["reason"] = "Positive ROI with confirmed conversions"
-    return df
-
-# Process file and apply your triage engine
-results_df, output_path = process_file(
-    "search_terms_report.csv",
-    triage_fn=my_triage_engine,
-    output_file="final_triaged_report.csv"
-)
+cd google-ads-triage-dashboard
+npm install
+npm run dev
 ```
 
-#### How Person 1 (UI / Web App) plugs in:
-Person 1 can call `process_file` inside their file upload handler (e.g. Streamlit or Flask):
-```python
-from data_pipeline import process_file, DataValidationError
-
-try:
-    df_results, out_file = process_file(uploaded_file_path, triage_fn=team_triage_engine)
-    # Render table in UI or provide download link to out_file
-except DataValidationError as err:
-    # Display friendly error message in UI
-    show_ui_alert(str(err))
+### Option 3: Run Vitest Unit Tests
+```bash
+cd google-ads-triage-dashboard
+npm test
 ```
 
 ---
 
-## Running Tests
+## 🧠 The 3-Way Triage Algorithm
 
-To verify that schema validation, sanitization, and triage engine integration work as expected:
-```bash
-python test_pipeline.py
-```
+| Category | Goal | Trigger Criteria | Recommended Action |
+| :--- | :--- | :--- | :--- |
+| <strong style="color:#10b981">PROMOTE</strong> | Scale winning queries | • Conversions $\ge 2$ AND CPA $\le \text{Target CPA} \times 1.15$<br>• High ROAS: $\ge 2.5\times$ Target ROAS<br>• High Conversion Rate ($\ge 12\%$) at efficient CPA | Export as **Exact Match `[query]`** with dedicated Max CPC bid to improve Quality Score & Ad Rank |
+| <strong style="color:#f43f5e">BLOCK</strong> | Stop budget bleeders | • **Bleeder**: Cost $\ge \$50$ with $0$ conversions<br>• **Click Burner**: $\ge 20$ clicks with $0$ conversions<br>• **Unprofitable CPA**: CPA $> \text{Max CPA}$ (\$85)<br>• **Negative Stopwords**: Matches `"free"`, `"crack"`, `"torrent"`, `"jobs"`, `"salary"`, `"login"`, etc.<br>• **Ghost Impressions**: $\ge 800$ impr with CTR $< 0.35\%$ and $0$ conv | Export as **Negative Exact `[query]`** or **Negative Phrase `"query"`** to immediately recover wasted ad spend |
+| <strong style="color:#f59e0b">IGNORE</strong> | Statistical patience | • Insufficient data (low clicks, low spend)<br>• Inconclusive sample size below bleeder threshold | Keep running in existing campaign and monitor until statistical significance is reached |
+
+---
+
+## 🛠 Features
+
+1. **PapaParse Google Ads Ingestion**:
+   - Skips Google Ads metadata header lines (e.g. `Search terms report`, date ranges).
+   - Filters out summary totals rows (`Total: Search terms`, `Total: Other search terms`, `Total: Account`).
+   - Cleans currencies (`$`, `€`, `£`), percentages (`%`), and commas automatically.
+   - Fuzzy column mapping across different Google Ads CSV export versions.
+
+2. **Executive KPI & Financial Summary**:
+   - Total queries & ad spend audited.
+   - Promoted winners count, conversion volume, and average CPA.
+   - Bleeder count and **instant monthly dollar savings calculation**.
+   - Testing spend on low-volume terms.
+
+3. **Visual Distribution & Strategy**:
+   - Query count distribution bar (Promote vs Block vs Ignore).
+   - Ad budget spend allocation breakdown.
+   - Actionable strategy alert banner.
+
+4. **Interactive Data Table**:
+   - Real-time search by query, campaign, ad group, or triggered rule.
+   - Multi-select checkboxes for batch triage (Batch Promote, Batch Block, Batch Ignore).
+   - Column sorting (Urgency Score, Spend, Clicks, Conversions, CPA, ROAS).
+   - Quick one-click manual status overrides.
+   - Configurable pagination (10, 15, 25, 50, View All).
+
+5. **Google Ads Export & Clipboard Toolkit**:
+   - **Google Ads Editor Negative Keywords CSV**: compatible bulk upload schema.
+   - **Promoted Keywords Exact Match CSV**: with calculated suggested Max CPC bids.
+   - **Full Audit CSV**: comprehensive report for stakeholders and clients.
+   - **1-Click Clipboard Copying**: copy negative keyword lists or exact match lists directly to paste into Google Ads.
+
+6. **Interactive Rule Thresholds Modal**:
+   - Adjust Target CPA, Max CPA, Bleeder spend limit, Click limits, and Target ROAS.
+   - Add or remove negative stopword tags with real-time recalculation.

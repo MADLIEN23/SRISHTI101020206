@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AdQueryTriage - Google Ads Search Query Triage Dashboard (Promote / Block / Ignore)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PapaParse CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- React & ReactDOM CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { background-color: #0b0f19; color: #f1f5f9; font-family: system-ui, -apple-system, sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useRef } = React;
+
+    const TRIAGE_STATUS = {
+      PROMOTE: 'promote',
+      BLOCK: 'block',
+      IGNORE: 'ignore',
+    };
+
+    const DEFAULT_CONFIG = {
+      targetCPA: 40.0,
+      maxCPA: 85.0,
+      minConversionsForPromote: 2,
+      bleederSpendThreshold: 50.0,
+      maxClicksWithoutConversion: 20,
+      targetROAS: 2.5,
+      minSpendForHighCPA: 60.0,
+      lowCtrThreshold: 0.35,
+      negativeStopwords: [
+        'free', 'crack', 'torrent', 'nulled', 'warez', 'hack', 'jobs', 'job',
+        'careers', 'career', 'internship', 'salary', 'salaries', 'login', 'portal',
+        'sign in', 'log in', 'pdf download', 'template free', 'meaning', 'definition',
+        'wikipedia', 'youtube', 'customer service', 'customer care', 'phone number',
+        'support number', 'complaints', 'refund', 'diy'
+      ],
+    };
+
+    const SAMPLE_CSV = `Search terms report
+Jan 1, 2026 - Mar 31, 2026
+Search term,Match type,Added/Excluded,Campaign,Ad group,Clicks,Impressions,CTR,Avg. CPC,Cost,Conversions,Cost / conv.,Conv. rate,Total conv. value,Conv. value / cost
+"fleet tracking software pricing",Phrase,None,Fleet Core - US,Software Tier 1,42,580,7.24%,$4.50,$189.00,7,$27.00,16.67%,$1850.00,9.79
+"best gps fleet management system",Phrase,None,Fleet Core - US,Fleet Management,55,890,6.18%,$5.20,$286.00,9,$31.78,16.36%,$2400.00,8.39
+"enterprise bus tracking solutions",Broad,None,Transit Solutions,Enterprise,38,620,6.13%,$6.10,$231.80,6,$38.63,15.79%,$1950.00,8.41
+"commercial vehicle route optimization app",Broad,None,Transit Solutions,Route Optimization,28,490,5.71%,$4.80,$134.40,4,$33.60,14.29%,$980.00,7.29
+"school bus live tracking portal for parents",Phrase,None,School Bus Safety,Parent Portal,31,710,4.37%,$3.20,$99.20,3,$33.07,9.68%,$750.00,7.56
+"fleet maintenance schedule software",Phrase,None,Fleet Core - US,Maintenance,24,380,6.32%,$4.15,$99.60,3,$33.20,12.50%,$680.00,6.83
+"obd2 fleet tracking hardware api",Exact,Added,Fleet Core - US,Hardware API,18,290,6.21%,$5.00,$90.00,2,$45.00,11.11%,$520.00,5.78
+"real time bus depot management platform",Phrase,None,Transit Solutions,Depot Admin,22,410,5.37%,$4.60,$101.20,3,$33.73,13.64%,$890.00,8.79
+"ev fleet charging telemetry system",Broad,None,Transit Solutions,EV Fleet,19,340,5.59%,$5.80,$110.20,2,$55.10,10.53%,$620.00,5.63
+"cold chain reefer temperature monitoring gps",Phrase,None,Fleet Core - US,Cold Chain,14,210,6.67%,$6.40,$89.60,2,$44.80,14.29%,$590.00,6.58
+"free fleet tracking open source github",Broad,None,Fleet Core - US,Software Tier 1,64,1240,5.16%,$1.85,$118.40,0,$0.00,0.00%,$0.00,0.00
+"gps tracker crack apk full download",Broad,None,Fleet Core - US,Fleet Management,48,990,4.85%,$1.60,$76.80,0,$0.00,0.00%,$0.00,0.00
+"fleet telematics jobs salary remote",Broad,None,Transit Solutions,Enterprise,39,810,4.81%,$2.20,$85.80,0,$0.00,0.00%,$0.00,0.00
+"cheap vehicle tracker login portal",Broad,None,Fleet Core - US,Software Tier 1,51,1120,4.55%,$1.75,$89.25,0,$0.00,0.00%,$0.00,0.00
+"how to hack gps tracker on delivery truck",Broad,None,Fleet Core - US,Fleet Management,36,650,5.54%,$1.50,$54.00,0,$0.00,0.00%,$0.00,0.00
+"free fleet management excel template xls",Phrase,None,Fleet Core - US,Maintenance,45,880,5.11%,$1.65,$74.25,0,$0.00,0.00%,$0.00,0.00
+"transit bus driver vacancies near me",Broad,None,Transit Solutions,Depot Admin,33,740,4.46%,$1.90,$62.70,0,$0.00,0.00%,$0.00,0.00
+"what is gps fleet tracking wikipedia",Broad,None,Fleet Core - US,Fleet Management,58,1450,4.00%,$1.45,$84.10,0,$0.00,0.00%,$0.00,0.00
+"diy raspberry pi bus tracker youtube video",Broad,None,Transit Solutions,Route Optimization,42,890,4.72%,$1.55,$65.10,0,$0.00,0.00%,$0.00,0.00
+"geotab customer support phone number",Phrase,None,Fleet Core - US,Software Tier 1,29,520,5.58%,$2.10,$60.90,0,$0.00,0.00%,$0.00,0.00
+"commercial vehicle laws by state pdf download",Broad,None,Transit Solutions,Enterprise,34,670,5.07%,$1.80,$61.20,0,$0.00,0.00%,$0.00,0.00
+"fleet software complaints forum reddit",Phrase,None,Fleet Core - US,Software Tier 1,27,430,6.28%,$2.40,$64.80,0,$0.00,0.00%,$0.00,0.00
+"enterprise transportation conference 2026",Broad,None,Transit Solutions,Enterprise,32,710,4.51%,$4.50,$144.00,1,$144.00,3.13%,$110.00,0.76
+"global logistics market forecast report",Broad,None,Transit Solutions,Enterprise,25,580,4.31%,$5.20,$130.00,1,$130.00,4.00%,$90.00,0.69
+"fleet management consultant hourly rates",Phrase,None,Fleet Core - US,Fleet Management,21,460,4.57%,$4.90,$102.90,1,$102.90,4.76%,$80.00,0.78
+"commercial trucking accident lawyer contact",Broad,None,Fleet Core - US,Maintenance,16,390,4.10%,$7.50,$120.00,1,$120.00,6.25%,$70.00,0.58
+"tracking",Broad,None,Transit Solutions,Route Optimization,12,3800,0.32%,$2.80,$33.60,0,$0.00,0.00%,$0.00,0.00
+"gps",Broad,None,Fleet Core - US,Fleet Management,8,2900,0.28%,$2.60,$20.80,0,$0.00,0.00%,$0.00,0.00
+"buses",Broad,None,Transit Solutions,Enterprise,6,2200,0.27%,$2.50,$15.00,0,$0.00,0.00%,$0.00,0.00
+"samsara vs keep truckin pricing",Phrase,None,Fleet Core - US,Software Tier 1,7,120,5.83%,$4.20,$29.40,0,$0.00,0.00%,$0.00,0.00
+"automatic passenger counting sensors bus",Phrase,None,Transit Solutions,Depot Admin,5,95,5.26%,$3.80,$19.00,0,$0.00,0.00%,$0.00,0.00
+"eld compliance devices for small fleets",Phrase,None,Fleet Core - US,Fleet Management,6,110,5.45%,$4.50,$27.00,0,$0.00,0.00%,$0.00,0.00
+"school bus routing software reviews",Phrase,None,School Bus Safety,Parent Portal,8,140,5.71%,$3.40,$27.20,0,$0.00,0.00%,$0.00,0.00
+"smart bus stop digital display api",Phrase,None,Transit Solutions,Route Optimization,4,75,5.33%,$3.90,$15.60,0,$0.00,0.00%,$0.00,0.00
+"transit ticketing system rfid qr code",Phrase,None,Transit Solutions,Depot Admin,6,105,5.71%,$4.00,$24.00,0,$0.00,0.00%,$0.00,0.00
+"telematics canbus decoder tool",Phrase,None,Fleet Core - US,Hardware API,4,82,4.88%,$4.40,$17.60,0,$0.00,0.00%,$0.00,0.00
+"truck fuel consumption reduction system",Phrase,None,Fleet Core - US,Maintenance,5,90,5.56%,$4.30,$21.50,0,$0.00,0.00%,$0.00,0.00
+"driver safety dashcam dual lens ai",Phrase,None,Fleet Core - US,Fleet Management,9,130,6.92%,$4.80,$43.20,1,$43.20,11.11%,$320.00,7.41
+"bus fleet electrification strategy toolkit",Phrase,None,Transit Solutions,EV Fleet,3,60,5.00%,$4.60,$13.80,0,$0.00,0.00%,$0.00,0.00
+"heavy duty truck diagnostic scanner",Phrase,None,Fleet Core - US,Maintenance,7,115,6.09%,$3.90,$27.30,0,$0.00,0.00%,$0.00,0.00
+Total: Search terms,,,,"772","23150","3.33%","$3.25","$2509.70","40","$62.74","5.18%","$11410.00","4.55"`;
+
+    function cleanNumber(val) {
+      if (val === null || val === undefined) return 0;
+      if (typeof val === 'number') return isNaN(val) ? 0 : val;
+      let str = String(val).trim();
+      if (str === '' || str === '--' || str === '-' || str === 'N/A') return 0;
+      str = str.replace(/[$,€£₹¥\s"']/g, '');
+      if (str.endsWith('%')) str = str.slice(0, -1);
+      str = str.replace(/^[<>~]/, '');
+      const parsed = parseFloat(str);
+      return isNaN(parsed) ? 0 : parsed;
+    }
+
+    function parseGoogleAdsCSVText(csvText) {
+      return new Promise((resolve, reject) => {
+        Papa.parse(csvText, {
+          skipEmptyLines: 'greedy',
+          complete: (results) => {
+            const rawData = results.data;
+            if (!rawData || rawData.length === 0) return reject(new Error('Empty CSV file'));
+
+            let headerIdx = 0;
+            for (let i = 0; i < Math.min(rawData.length, 10); i++) {
+              const rowStr = rawData[i].map(c => String(c).toLowerCase()).join(' ');
+              if (rowStr.includes('search term') || rowStr.includes('query')) {
+                headerIdx = i;
+                break;
+              }
+            }
+
+            const headers = rawData[headerIdx].map(h => String(h || '').trim().toLowerCase());
+            const queryIdx = headers.findIndex(h => h.includes('search term') || h.includes('query'));
+            const costIdx = headers.findIndex(h => h.includes('cost') || h.includes('spend'));
+            const clicksIdx = headers.findIndex(h => h.includes('clicks'));
+            const imprIdx = headers.findIndex(h => h.includes('impr'));
+            const convIdx = headers.findIndex(h => h.includes('conversion') || h.includes('conv.') || h.includes('conv'));
+            const cpaIdx = headers.findIndex(h => h.includes('cost / conv') || h.includes('cpa'));
+            const convValIdx = headers.findIndex(h => h.includes('conv. value') || h.includes('revenue') || h.includes('value'));
+            const matchIdx = headers.findIndex(h => h.includes('match type'));
+            const campIdx = headers.findIndex(h => h.includes('campaign'));
+            const adgIdx = headers.findIndex(h => h.includes('ad group'));
+
+            const rows = [];
+            for (let i = headerIdx + 1; i < rawData.length; i++) {
+              const r = rawData[i];
+              const query = queryIdx !== -1 && r[queryIdx] ? String(r[queryIdx]).trim() : '';
+              if (!query || query.toLowerCase().startsWith('total:') || query.toLowerCase().startsWith('total')) continue;
+
+              const cost = cleanNumber(costIdx !== -1 ? r[costIdx] : 0);
+              const clicks = cleanNumber(clicksIdx !== -1 ? r[clicksIdx] : 0);
+              const impressions = cleanNumber(imprIdx !== -1 ? r[imprIdx] : 0);
+              const conversions = cleanNumber(convIdx !== -1 ? r[convIdx] : 0);
+              const conversionValue = cleanNumber(convValIdx !== -1 ? r[convValIdx] : 0);
+              const cpa = conversions > 0 ? (cpaIdx !== -1 && cleanNumber(r[cpaIdx]) > 0 ? cleanNumber(r[cpaIdx]) : cost / conversions) : null;
+              const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+              const avgCpc = clicks > 0 ? cost / clicks : 0;
+              const convRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
+              const roas = cost > 0 ? conversionValue / cost : 0;
+
+              rows.push({
+                id: `q-${i}-${query.slice(0, 10).replace(/\s+/g, '_')}`,
+                query,
+                cost,
+                clicks,
+                impressions,
+                conversions,
+                conversionValue,
+                cpa,
+                ctr,
+                avgCpc,
+                convRate,
+                roas,
+                matchType: matchIdx !== -1 && r[matchIdx] ? r[matchIdx] : 'Broad',
+                campaign: campIdx !== -1 && r[campIdx] ? r[campIdx] : 'Search Campaign',
+                adGroup: adgIdx !== -1 && r[adgIdx] ? r[adgIdx] : 'Default Ad Group',
+              });
+            }
+            resolve(rows);
+          },
+          error: reject
+        });
+      });
+    }
+
+    function triageSingle(row, config) {
+      if (row.userOverride) {
+        return {
+          status: row.userOverride,
+          rule: 'Manual Override',
+          reason: `Manually set by user to ${row.userOverride.toUpperCase()}`,
+          urgencyScore: row.userOverride === 'promote' ? 85 : row.userOverride === 'block' ? -85 : 0,
+          overridden: true,
+        };
+      }
+
+      const q = row.query.toLowerCase();
+      // Check negative stopword
+      const matchedStopword = config.negativeStopwords.find(w => new RegExp(`(^|\\b)${w}(\\b|$)`, 'i').test(q));
+      if (matchedStopword && row.conversions === 0) {
+        return {
+          status: TRIAGE_STATUS.BLOCK,
+          rule: 'Negative Stopword Match',
+          reason: `Contains stopword "${matchedStopword}" with 0 conversions ($${row.cost.toFixed(2)} spent)`,
+          urgencyScore: -75,
+        };
+      }
+
+      // Bleeder spend
+      if (row.conversions === 0 && row.cost >= config.bleederSpendThreshold) {
+        return {
+          status: TRIAGE_STATUS.BLOCK,
+          rule: 'Bleeder: Zero Conversions',
+          reason: `$${row.cost.toFixed(2)} spent with 0 conversions (Threshold: $${config.bleederSpendThreshold})`,
+          urgencyScore: -85,
+        };
+      }
+
+      // Click burner
+      if (row.conversions === 0 && row.clicks >= config.maxClicksWithoutConversion) {
+        return {
+          status: TRIAGE_STATUS.BLOCK,
+          rule: 'Click Burner',
+          reason: `${row.clicks} clicks with 0 conversions (Max: ${config.maxClicksWithoutConversion})`,
+          urgencyScore: -70,
+        };
+      }
+
+      // Runaway CPA
+      if (row.conversions > 0 && row.cpa > config.maxCPA && row.cost >= config.minSpendForHighCPA) {
+        return {
+          status: TRIAGE_STATUS.BLOCK,
+          rule: 'Unprofitable High CPA',
+          reason: `CPA of $${row.cpa.toFixed(2)} exceeds maximum limit of $${config.maxCPA.toFixed(2)}`,
+          urgencyScore: -60,
+        };
+      }
+
+      // Star Converter (Promote)
+      if (row.conversions >= config.minConversionsForPromote && (row.cpa <= config.targetCPA * 1.15 || (row.conversionValue > 0 && row.roas >= config.targetROAS))) {
+        return {
+          status: TRIAGE_STATUS.PROMOTE,
+          rule: 'Star Converter',
+          reason: `${row.conversions} conv @ $${row.cpa.toFixed(2)} CPA${row.roas > 0 ? ` (${row.roas.toFixed(1)}x ROAS)` : ''}`,
+          urgencyScore: 80,
+        };
+      }
+
+      // High ROAS Performer
+      if (row.conversions >= 1 && row.conversionValue > 0 && row.roas >= config.targetROAS * 1.25 && row.cost >= 15) {
+        return {
+          status: TRIAGE_STATUS.PROMOTE,
+          rule: 'High ROAS Performer',
+          reason: `${row.roas.toFixed(2)}x ROAS ($${row.conversionValue.toFixed(2)} revenue on $${row.cost.toFixed(2)} spend)`,
+          urgencyScore: 85,
+        };
+      }
+
+      // Default: Ignore
+      return {
+        status: TRIAGE_STATUS.IGNORE,
+        rule: 'Inconclusive / Monitor',
+        reason: row.conversions === 0 
+          ? `Low sample: ${row.clicks} clicks ($${row.cost.toFixed(2)} spend). Below bleeder threshold.`
+          : `Moderate performance: ${row.conversions} conv @ $${row.cpa ? row.cpa.toFixed(2) : '0'} CPA. Gather more data.`,
+        urgencyScore: 0,
+      };
+    }
+
+    function triageAll(rows, config) {
+      let pCount = 0, bCount = 0, iCount = 0, oCount = 0;
+      let totalSpend = 0, bleederSaved = 0, pSpend = 0, pConv = 0, pRev = 0, iSpend = 0;
+
+      const triaged = rows.map(r => {
+        const res = triageSingle(r, config);
+        totalSpend += r.cost;
+        if (res.overridden) oCount++;
+
+        if (res.status === TRIAGE_STATUS.PROMOTE) {
+          pCount++; pSpend += r.cost; pConv += r.conversions; pRev += r.conversionValue;
+        } else if (res.status === TRIAGE_STATUS.BLOCK) {
+          bCount++; bleederSaved += r.cost;
+        } else {
+          iCount++; iSpend += r.cost;
+        }
+
+        return { ...r, triageStatus: res.status, triageRule: res.rule, triageReason: res.reason, urgencyScore: res.urgencyScore, overridden: Boolean(res.overridden) };
+      });
+
+      return {
+        triaged,
+        summary: {
+          totalQueries: rows.length,
+          promoteCount: pCount,
+          blockCount: bCount,
+          ignoreCount: iCount,
+          overriddenCount: oCount,
+          totalSpend,
+          bleederSpendSaved: bleederSaved,
+          bleederSpendPercent: totalSpend > 0 ? (bleederSaved / totalSpend) * 100 : 0,
+          promotedSpend: pSpend,
+          promotedConversions: pConv,
+          promotedCPA: pConv > 0 ? pSpend / pConv : 0,
+          promotedROAS: pSpend > 0 ? pRev / pSpend : 0,
+          ignoredSpend: iSpend,
+        }
+      };
+    }
+
+    function App() {
+      const [rawRows, setRawRows] = useState([]);
+      const [config, setConfig] = useState(DEFAULT_CONFIG);
+      const [activeTab, setActiveTab] = useState('all');
+      const [searchQuery, setSearchQuery] = useState('');
+      const [toast, setToast] = useState(null);
+      const [isConfigOpen, setIsConfigOpen] = useState(false);
+      const fileInputRef = useRef(null);
+
+      const showToast = (msg) => {
+        setToast(msg);
+        setTimeout(() => setToast(null), 2500);
+      };
+
+      const { triaged, summary } = useMemo(() => {
+        if (!rawRows.length) return { triaged: [], summary: null };
+        return triageAll(rawRows, config);
+      }, [rawRows, config]);
+
+      const handleFileUpload = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          try {
+            const parsed = await parseGoogleAdsCSVText(ev.target.result);
+            setRawRows(parsed);
+            showToast(`Loaded ${parsed.length} queries from ${file.name}`);
+          } catch (err) {
+            alert('CSV parsing error: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      const handleLoadSample = async () => {
+        const parsed = await parseGoogleAdsCSVText(SAMPLE_CSV);
+        setRawRows(parsed);
+        showToast(`Loaded ${parsed.length} sample search queries!`);
+      };
+
+      const handleOverride = (id, newStatus) => {
+        setRawRows(prev => prev.map(r => r.id === id ? { ...r, userOverride: r.userOverride === newStatus ? null : newStatus } : r));
+        showToast(`Updated query to ${newStatus.toUpperCase()}`);
+      };
+
+      const handleExportNegatives = () => {
+        const blocked = triaged.filter(r => r.triageStatus === 'block');
+        const csv = Papa.unparse(blocked.map(r => ({
+          'Campaign': r.campaign,
+          'Ad Group': r.adGroup,
+          'Keyword': `[${r.query}]`,
+          'Criterion Type': 'Negative Exact',
+          'Wasted Spend': `$${r.cost.toFixed(2)}`,
+          'Reason': r.triageReason
+        })));
+        downloadCSV(csv, 'google_ads_negatives.csv');
+      };
+
+      const handleExportPromoted = () => {
+        const promoted = triaged.filter(r => r.triageStatus === 'promote');
+        const csv = Papa.unparse(promoted.map(r => ({
+          'Campaign': r.campaign,
+          'Ad Group': r.adGroup,
+          'Keyword': `[${r.query}]`,
+          'Criterion Type': 'Exact',
+          'Max CPC': `$${(r.avgCpc * 1.15).toFixed(2)}`,
+          'Conversions': r.conversions,
+          'CPA': `$${r.cpa ? r.cpa.toFixed(2) : 0}`,
+          'Reason': r.triageReason
+        })));
+        downloadCSV(csv, 'google_ads_promoted_exact.csv');
+      };
+
+      const downloadCSV = (content, filename) => {
+        const blob = new Blob([content], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      const copyNegatives = () => {
+        const blocked = triaged.filter(r => r.triageStatus === 'block');
+        const txt = blocked.map(r => `[${r.query}]`).join('\n');
+        navigator.clipboard.writeText(txt);
+        showToast(`Copied ${blocked.length} negative keywords to clipboard!`);
+      };
+
+      const filtered = useMemo(() => {
+        return triaged.filter(r => {
+          if (activeTab === 'promote' && r.triageStatus !== 'promote') return false;
+          if (activeTab === 'block' && r.triageStatus !== 'block') return false;
+          if (activeTab === 'ignore' && r.triageStatus !== 'ignore') return false;
+          if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            return r.query.toLowerCase().includes(q) || (r.triageReason || '').toLowerCase().includes(q);
+          }
+          return true;
+        });
+      }, [triaged, activeTab, searchQuery]);
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          {/* Header */}
+          <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-30">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
+                Ad
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-white">Google Ads Query Triage</h1>
+                <p className="text-xs text-slate-400">PapaParse Ingestion • Promote / Block / Ignore Decisions</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
+              <button onClick={() => fileInputRef.current?.click()} className="px-3.5 py-2 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer">
+                📁 Upload CSV
+              </button>
+              <button onClick={handleLoadSample} className="px-3.5 py-2 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer shadow-sm">
+                ✨ Load Sample Data
+              </button>
+              {rawRows.length > 0 && (
+                <>
+                  <button onClick={copyNegatives} className="px-3 py-2 text-xs font-medium rounded-lg bg-rose-600/80 hover:bg-rose-500 text-white cursor-pointer">
+                    📋 Copy Negatives
+                  </button>
+                  <button onClick={handleExportNegatives} className="px-3 py-2 text-xs font-medium rounded-lg bg-rose-700 hover:bg-rose-600 text-white cursor-pointer">
+                    ⬇️ Negatives CSV
+                  </button>
+                  <button onClick={handleExportPromoted} className="px-3 py-2 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer">
+                    ⬇️ Promoted CSV
+                  </button>
+                </>
+              )}
+            </div>
+          </header>
+
+          {/* Toast */}
+          {toast && (
+            <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-slate-700 px-4 py-2.5 rounded-xl shadow-2xl text-xs text-white">
+              {toast}
+            </div>
+          )}
+
+          {/* Main */}
+          <main className="max-w-7xl w-full mx-auto p-6 flex-1 space-y-6">
+            {!rawRows.length ? (
+              <div className="text-center py-20 space-y-6 max-w-xl mx-auto">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center mx-auto text-3xl">
+                  📊
+                </div>
+                <h2 className="text-3xl font-extrabold text-white">Google Ads Query Triager</h2>
+                <p className="text-sm text-slate-400">
+                  Upload your Search Terms report to automatically segment queries into high-performing exact match candidates, 
+                  budget bleeders to block, and low-volume queries to monitor.
+                </p>
+                <div className="flex justify-center gap-4 pt-2">
+                  <button onClick={handleLoadSample} className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-medium text-sm text-white shadow-lg cursor-pointer">
+                    Load 40+ Preloaded Search Queries
+                  </button>
+                  <button onClick={() => fileInputRef.current?.click()} className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 font-medium text-sm text-slate-200 cursor-pointer">
+                    Upload CSV File
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* KPI Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                    <span className="text-xs text-slate-400">Total Queries</span>
+                    <div className="text-2xl font-bold text-white mt-1">{summary.totalQueries}</div>
+                    <div className="text-xs text-slate-400 mt-1">Spend: ${summary.totalSpend.toFixed(2)}</div>
+                  </div>
+
+                  <div onClick={() => setActiveTab('promote')} className="bg-slate-900 border border-emerald-500/30 rounded-xl p-4 cursor-pointer hover:border-emerald-500/60">
+                    <span className="text-xs text-emerald-400 font-semibold">🚀 Promote (Winners)</span>
+                    <div className="text-2xl font-bold text-emerald-400 mt-1">{summary.promoteCount}</div>
+                    <div className="text-xs text-emerald-300 mt-1">{summary.promotedConversions} conv @ ${summary.promotedCPA.toFixed(2)} CPA</div>
+                  </div>
+
+                  <div onClick={() => setActiveTab('block')} className="bg-slate-900 border border-rose-500/30 rounded-xl p-4 cursor-pointer hover:border-rose-500/60">
+                    <span className="text-xs text-rose-400 font-semibold">🚫 Block (Bleeders)</span>
+                    <div className="text-2xl font-bold text-rose-400 mt-1">{summary.blockCount}</div>
+                    <div className="text-xs text-rose-300 font-bold mt-1">${summary.bleederSpendSaved.toFixed(2)} wasted spend saved</div>
+                  </div>
+
+                  <div onClick={() => setActiveTab('ignore')} className="bg-slate-900 border border-slate-800 rounded-xl p-4 cursor-pointer hover:border-slate-700">
+                    <span className="text-xs text-amber-400 font-semibold">⏳ Ignore (Monitor)</span>
+                    <div className="text-2xl font-bold text-slate-200 mt-1">{summary.ignoreCount}</div>
+                    <div className="text-xs text-slate-400 mt-1">${summary.ignoredSpend.toFixed(2)} testing spend</div>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                  <div className="p-4 border-b border-slate-800 bg-slate-950/40 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex gap-2 text-xs">
+                      {['all', 'promote', 'block', 'ignore'].map(tab => (
+                        <button
+                          key={tab}
+                          onClick={() => setActiveTab(tab)}
+                          className={`px-3 py-1.5 rounded-lg capitalize font-medium cursor-pointer ${
+                            activeTab === tab ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                          }`}
+                        >
+                          {tab} {tab === 'promote' ? `(${summary.promoteCount})` : tab === 'block' ? `(${summary.blockCount})` : tab === 'ignore' ? `(${summary.ignoreCount})` : `(${summary.totalQueries})`}
+                        </button>
+                      ))}
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="Search query or rule..."
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-64"
+                    />
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 bg-slate-950/60 text-slate-400">
+                          <th className="p-3">Search Term</th>
+                          <th className="p-3">Decision</th>
+                          <th className="p-3">Reason</th>
+                          <th className="p-3 text-right">Spend</th>
+                          <th className="p-3 text-right">Clicks</th>
+                          <th className="p-3 text-right">Conversions</th>
+                          <th className="p-3 text-right">CPA</th>
+                          <th className="p-3 text-center">Override</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60">
+                        {filtered.map(r => (
+                          <tr key={r.id} className="hover:bg-slate-800/30">
+                            <td className="p-3 font-medium text-slate-100">{r.query}</td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                r.triageStatus === 'promote' ? 'bg-emerald-500/20 text-emerald-300' :
+                                r.triageStatus === 'block' ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-300'
+                              }`}>
+                                {r.triageStatus}
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-400 max-w-xs">{r.triageReason}</td>
+                            <td className="p-3 text-right font-mono">${r.cost.toFixed(2)}</td>
+                            <td className="p-3 text-right font-mono">{r.clicks}</td>
+                            <td className="p-3 text-right font-mono font-bold text-emerald-400">{r.conversions}</td>
+                            <td className="p-3 text-right font-mono">{r.cpa !== null ? `$${r.cpa.toFixed(2)}` : '--'}</td>
+                            <td className="p-3 text-center">
+                              <div className="inline-flex gap-1">
+                                <button onClick={() => handleOverride(r.id, 'promote')} className="px-1.5 py-0.5 rounded bg-emerald-950 hover:bg-emerald-800 text-emerald-300 text-[10px] cursor-pointer">P</button>
+                                <button onClick={() => handleOverride(r.id, 'block')} className="px-1.5 py-0.5 rounded bg-rose-950 hover:bg-rose-800 text-rose-300 text-[10px] cursor-pointer">B</button>
+                                <button onClick={() => handleOverride(r.id, 'ignore')} className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] cursor-pointer">I</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
